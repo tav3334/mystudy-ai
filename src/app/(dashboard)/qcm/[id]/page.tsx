@@ -8,5 +8,5 @@ export default async function Quiz({
 }) {
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
-  return <QuizPlayer quizId={id} />;
+  return <QuizPlayer key={id} quizId={id} />;
 }

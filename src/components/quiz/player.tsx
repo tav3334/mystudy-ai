@@ -1,13 +1,15 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { QuizSource } from "./source";
 import { toast } from "sonner";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   Timer,
-  ExternalLink,
+  RotateCcw,
   Printer,
   LoaderCircle,
 } from "lucide-react";
@@ -51,6 +53,8 @@ export function QuizPlayer({
   quizId: string;
   initialReview?: { game: Playing; result: Result };
 }) {
+  const router = useRouter();
+  const [retrying, setRetrying] = useState(false);
   const [game, setGame] = useState<Playing | null>(initialReview?.game ?? null);
   const [index, setIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number[]>>({});
@@ -150,6 +154,28 @@ export function QuizPlayer({
       setBusy(false);
     }
   }
+  async function retryMistakes() {
+    if (!game || retrying) return;
+    setRetrying(true);
+    try {
+      const response = await fetch("/api/quizzes/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId: game.attempt.id }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      router.push("/qcm/" + data.id);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Impossible de préparer vos erreurs.",
+      );
+    } finally {
+      setRetrying(false);
+    }
+  }
   if (!game)
     return (
       <section className="panel p-12 text-center max-w-2xl mx-auto">
@@ -192,16 +218,37 @@ export function QuizPlayer({
           <p className="muted text-sm mt-3">
             {result.score} bonnes réponses sur {result.total}
           </p>
-          <div className="flex gap-3 justify-center mt-6 no-print">
+          <div className="flex flex-wrap gap-3 justify-center mt-6 no-print">
             <Button variant="outline" onClick={() => window.print()}>
               <Printer size={15} />
               Imprimer / PDF
             </Button>
+            {result.review.some((q) => !q.correct) && (
+              <Button
+                variant="outline"
+                disabled={retrying}
+                onClick={retryMistakes}
+              >
+                {retrying ? (
+                  <LoaderCircle size={15} className="animate-spin" />
+                ) : (
+                  <RotateCcw size={15} />
+                )}
+                Revoir mes erreurs (
+                {result.review.filter((q) => !q.correct).length})
+              </Button>
+            )}
             <Button asChild>
               <Link href="/qcm">Nouveau QCM</Link>
             </Button>
           </div>
         </section>
+        {result.review.some((q) => !q.correct) && (
+          <p className="muted text-sm text-center no-print">
+            Reprenez les questions ratées ou sans réponse. Aucun quota AI
+            utilisé.
+          </p>
+        )}
         <h2 className="font-semibold text-xl">Comprendre mes réponses</h2>
         {result.review.map((q, i) => (
           <article className="panel p-6 space-y-4" key={q.id}>
@@ -225,19 +272,7 @@ export function QuizPlayer({
               ))}
             </div>
             <p className="text-sm leading-7 muted">{q.explanation}</p>
-            <a
-              href={q.source.source_url}
-              target="_blank"
-              rel="noreferrer"
-              className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-2"
-            >
-              <ExternalLink size={13} />
-              {q.source.document_name}
-              {q.source.page ? ` · Page / diapositive ${q.source.page}` : ""}
-            </a>
-            <blockquote className="text-xs muted border-l-2 border-[var(--border)] pl-3 leading-6">
-              {q.source.quote}
-            </blockquote>
+            <QuizSource source={q.source} />
           </article>
         ))}
       </div>
