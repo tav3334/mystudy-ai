@@ -40,3 +40,12 @@ test("job endpoint requires a server credential", async ({ request }) => {
   const r = await request.get("/api/jobs");
   expect(r.status()).toBe(401);
 });
+
+test("QCM endpoint rejects cross-site submissions", async ({ request }) => {
+  const r = await request.post("/api/quizzes/generate", {
+    headers: { Origin: "https://foreign-site.example" },
+    data: {},
+  });
+  expect(r.status()).toBe(403);
+  expect((await r.json()).error).toContain("Origine");
+});

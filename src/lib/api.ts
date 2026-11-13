@@ -2,7 +2,7 @@ import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { admin, requireUser } from "@/lib/supabase/server";
-import { appUrl } from "@/lib/env";
+import { isTrustedBrowserRequest } from "@/lib/validation/origin";
 export class HttpError extends Error {
   constructor(
     public status: number,
@@ -18,7 +18,21 @@ export async function apiUser(
 ) {
   if (
     request.method !== "GET" &&
-    request.headers.get("origin") !== new URL(appUrl()).origin
+    !isTrustedBrowserRequest(
+      {
+        url: request.url,
+        origin: request.headers.get("origin"),
+        referer: request.headers.get("referer"),
+        fetchSite: request.headers.get("sec-fetch-site"),
+      },
+      {
+        appUrl: process.env.NEXT_PUBLIC_APP_URL,
+        deploymentHost: process.env.VERCEL_URL,
+        branchHost: process.env.VERCEL_BRANCH_URL,
+        productionHost: process.env.VERCEL_PROJECT_PRODUCTION_URL,
+        development: process.env.NODE_ENV === "development",
+      },
+    )
   )
     throw new HttpError(403, "Origine de la requête non autorisée.");
   const auth = await requireUser();
