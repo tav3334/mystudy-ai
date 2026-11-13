@@ -64,3 +64,9 @@ export function normalizeModel(value: string | undefined): string | null {
   const model = (value ?? "gemini-2.5-flash").trim().replace(/^models\//, "");
   return /^gemini-[a-z0-9][a-z0-9.-]{0,90}$/.test(model) ? model : null;
 }
+
+// Migrate the unavailable legacy default, preserving explicit current models.
+export function generationModel(value: string | undefined): string | null {
+  const model = normalizeModel(value);
+  return model === "gemini-2.5-flash" ? "gemini-3.1-flash-lite" : model;
+}

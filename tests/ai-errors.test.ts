@@ -30,3 +30,11 @@ describe("safe configured model names", () => {
     expect(normalizeModel("not a model identifier")).toBeNull();
   });
 });
+
+import { generationModel } from "../src/lib/ai/errors";
+it("migrates legacy Gemini while retaining explicitly selected current models", () => {
+  expect(generationModel(undefined)).toBe("gemini-3.1-flash-lite");
+  expect(generationModel("models/gemini-2.5-flash")).toBe("gemini-3.1-flash-lite");
+  expect(generationModel("gemini-3.5-flash")).toBe("gemini-3.5-flash");
+  expect(generationModel("invalid")).toBeNull();
+});
