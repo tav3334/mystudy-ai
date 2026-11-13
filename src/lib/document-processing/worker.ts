@@ -1,3 +1,5 @@
+import { claimIndexingJob } from "./queue";
+import { ProcessingYield } from "./policy";
 import { processingFailure, type ProcessingStage } from "./errors";
 import "server-only";
 import { admin, checked } from "@/lib/supabase/server";
@@ -5,12 +7,14 @@ import { accessToken, driveFetch } from "@/lib/google-drive/client";
 import { extract } from "./extract";
 import { chunkSections } from "./chunk";
 import { ai } from "@/lib/ai/provider";
-export async function processNext() {
+export async function processNext(
+  options: { userId?: string; deadline?: number } = {},
+) {
   const db = admin();
-  const jobs = checked(await db.rpc("claim_document_job"));
-  const job = jobs?.[0];
+  const job = await claimIndexingJob(options.userId);
   if (!job) return { processed: false };
   let stage: ProcessingStage = "load_document";
+  let newEmbeddings = 0;
   try {
     const doc = checked(
       await db
@@ -102,6 +106,8 @@ export async function processNext() {
     );
     const rows = [];
     for (const c of chunks) {
+      if (options.deadline && Date.now() > options.deadline - 100000)
+        throw new ProcessingYield();
       const model =
         process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
       const cached = checked(
@@ -131,6 +137,7 @@ export async function processNext() {
             { onConflict: "user_id,content_hash,model" },
           ),
         );
+      if (!prior) newEmbeddings++;
       rows.push({ ...c, embedding });
     }
     stage = "save";
@@ -145,7 +152,64 @@ export async function processNext() {
     );
     return { processed: true, documentId: doc.id };
   } catch (e) {
-    const problem = processingFailure(e, stage);
+    const yielded = e instanceof ProcessingYield;
+    const problem =
+      yielded && newEmbeddings === 0 && job.attempts >= 3
+        ? {
+            code: "INDEXING_STALLED",
+            message:
+              "Document trop long à préparer automatiquement. Séparez-le en chapitres plus courts puis synchronisez Google Drive.",
+            stage,
+          }
+        : processingFailure(e, stage);
+    const paused =
+      problem.code === "AI_DAILY_LIMIT" || problem.code === "AI_PROVIDER_QUOTA";
+    if ((yielded && problem.code !== "INDEXING_STALLED") || paused) {
+      if (problem.code === "AI_PROVIDER_QUOTA")
+        checked(
+          await db.from("api_rate_limits").upsert(
+            {
+              user_id: job.user_id,
+              bucket: "indexing-provider-cooldown",
+              window_start: new Date().toISOString(),
+              requests: 1,
+            },
+            { onConflict: "user_id,bucket" },
+          ),
+        );
+      checked(
+        await db
+          .from("document_processing_jobs")
+          .update({
+            status: "pending",
+            locked_at: yielded ? null : new Date().toISOString(),
+            attempts:
+              paused || newEmbeddings > 0
+                ? Math.max(0, job.attempts - 1)
+                : job.attempts,
+            error: yielded ? null : problem.message,
+          })
+          .eq("id", job.id)
+          .eq("user_id", job.user_id),
+      );
+      checked(
+        await db
+          .from("documents")
+          .update({
+            status: "queued",
+            processing_error: yielded ? null : problem.message,
+          })
+          .eq("id", job.document_id)
+          .eq("user_id", job.user_id)
+          .eq("version", job.version),
+      );
+      return {
+        processed: false,
+        paused,
+        yielded,
+        errorCode: paused ? problem.code : undefined,
+      };
+    }
     const safe = problem.message;
     console.error("document_processing_failed", {
       jobId: job.id,

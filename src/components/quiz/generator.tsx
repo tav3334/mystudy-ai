@@ -129,8 +129,8 @@ export function QuizGenerator({
             <div className="p-8 text-center">
               <FileText className="muted mx-auto mb-3" />
               <p className="text-xs muted leading-6">
-                Aucun document indexé. Synchronisez vos cours puis indexez un
-                document dans la bibliothèque.
+                Vos cours sont préparés automatiquement après la
+                synchronisation. Ils apparaîtront ici une fois indexés.
               </p>
             </div>
           )}

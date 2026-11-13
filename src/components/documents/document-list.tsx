@@ -1,16 +1,7 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import {
-  FileText,
-  ExternalLink,
-  Search,
-  Play,
-  LoaderCircle,
-} from "lucide-react";
-import { toast } from "sonner";
+import { FileText, ExternalLink, Search } from "lucide-react";
 import type { StudyData } from "@/lib/data";
-import { Button } from "@/components/ui/button";
 export function DocumentList({
   data,
   initialQuery = "",
@@ -22,31 +13,11 @@ export function DocumentList({
 }) {
   const [query, setQuery] = useState(initialQuery);
   const [module, setModule] = useState(initialModule);
-  const [busy, setBusy] = useState<string | null>(null);
-  const router = useRouter();
   const documents = data.documents.filter(
     (d) =>
       (!module || d.module_id === module) &&
       d.name.toLocaleLowerCase().includes(query.toLocaleLowerCase()),
   );
-  async function process(id: string) {
-    setBusy(id);
-    try {
-      const r = await fetch("/api/documents/process", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentId: id }),
-      });
-      const json = await r.json();
-      if (!r.ok) throw new Error(json.error);
-      toast.success("Traitement enregistré. Le worker indexera le document.");
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Traitement impossible");
-    } finally {
-      setBusy(null);
-    }
-  }
   return (
     <section className="panel overflow-hidden">
       <div className="p-4 border-b border-[var(--border)] flex flex-col sm:flex-row gap-3">
@@ -110,7 +81,7 @@ export function DocumentList({
                     {(
                       {
                         ready: "Indexé",
-                        pending: "À indexer",
+                        pending: "En attente automatique",
                         queued: "En attente",
                         processing: "En cours",
                         failed: "Échec",
@@ -137,21 +108,6 @@ export function DocumentList({
                     >
                       <ExternalLink size={16} className="muted" />
                     </a>
-                    {d.status !== "ready" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy !== null || d.status === "processing"}
-                        onClick={() => process(d.id)}
-                      >
-                        {busy === d.id ? (
-                          <LoaderCircle className="animate-spin" size={13} />
-                        ) : (
-                          <Play size={13} />
-                        )}
-                        Indexer
-                      </Button>
-                    )}
                   </div>
                 </td>
               </tr>

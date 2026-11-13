@@ -233,3 +233,46 @@ describe("job and exam safeguards", () => {
     ).toHaveLength(0);
   });
 });
+
+describe("automatic indexing lease isolation", () => {
+  it("does not let a second runner steal a live account lease", async () => {
+    await pg.query(
+      `insert into api_rate_limits(user_id,bucket,window_start) values($1,'automatic-indexing-lease',now())`,
+      [alice],
+    );
+    const update = await pg.query(
+      `update api_rate_limits set window_start=now() where user_id=$1 and bucket='automatic-indexing-lease' and window_start<now()-interval '5 minutes' returning user_id`,
+      [alice],
+    );
+    expect(update.rows).toHaveLength(0);
+  });
+  it("recovers an abandoned lease and guards release by token", async () => {
+    await pg.query(
+      `update api_rate_limits set window_start=now()-interval '10 minutes' where user_id=$1 and bucket='automatic-indexing-lease'`,
+      [alice],
+    );
+    const lease = await pg.query<{ window_start: Date }>(
+      `update api_rate_limits set window_start=now() where user_id=$1 and bucket='automatic-indexing-lease' and window_start<now()-interval '5 minutes' returning window_start`,
+      [alice],
+    );
+    expect(lease.rows).toHaveLength(1);
+    const stale = await pg.query(
+      `delete from api_rate_limits where user_id=$1 and bucket='automatic-indexing-lease' and window_start=$2 returning user_id`,
+      [alice, "2020-01-01T00:00:00Z"],
+    );
+    expect(stale.rows).toHaveLength(0);
+  });
+  it("does not expose leases or let another account edit the queue", async () => {
+    await asUser(bob, async () => {
+      expect(
+        (await pg.query("select * from api_rate_limits")).rows,
+      ).toHaveLength(0);
+      await expect(
+        pg.query(
+          `update document_processing_jobs set status='done' where user_id=$1`,
+          [alice],
+        ),
+      ).rejects.toThrow();
+    });
+  });
+});

@@ -10,7 +10,6 @@ test("all study screens render without runtime errors", async ({
     "/",
     "/modules",
     "/documents",
-    "/revision",
     "/qcm",
     "/examens",
     "/pratique",

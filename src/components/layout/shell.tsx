@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   FolderOpen,
   Files,
-  Sparkles,
   ListChecks,
   Timer,
   Code2,
@@ -25,12 +24,12 @@ import {
   LogOut,
   ChevronRight,
 } from "lucide-react";
+import { AutomaticIndexing } from "@/components/documents/automatic-indexing";
 import { signOut } from "@/app/auth/actions";
 const navigation = [
   ["/", "Tableau de bord", LayoutDashboard],
   ["/modules", "Mes modules", FolderOpen],
   ["/documents", "Documents", Files],
-  ["/revision", "Révision AI", Sparkles],
   ["/qcm", "QCM", ListChecks],
   ["/examens", "Examens blancs", Timer],
   ["/pratique", "TD / TP", Code2],
@@ -87,9 +86,11 @@ export function Shell({
           Mon espace d’apprentissage
         </div>
         <nav className="px-3 space-y-1 flex-1 overflow-y-auto">
-          {navigation.map(([href, label, Icon], i) => (
+          {navigation.map(([href, label, Icon]) => (
             <div key={href}>
-              {i === 9 && <div className="h-px bg-[var(--border)] my-4 mx-3" />}
+              {href === "/statistiques" && (
+                <div className="h-px bg-[var(--border)] my-4 mx-3" />
+              )}
               <Link
                 onClick={() => setOpen(false)}
                 href={href}
@@ -98,11 +99,6 @@ export function Shell({
               >
                 <Icon size={18} strokeWidth={1.7} />
                 {label}
-                {label === "Révision AI" && (
-                  <span className="text-[9px] font-bold bg-emerald-500/10 text-emerald-600 px-1.5 py-0.5 rounded ml-auto">
-                    AI
-                  </span>
-                )}
               </Link>
             </div>
           ))}
@@ -196,6 +192,7 @@ export function Shell({
           </div>
         )}
         <main id="content" className="max-w-[1600px] mx-auto p-5 md:p-9">
+          <AutomaticIndexing enabled={configured && !!email} />
           {children}
         </main>
         <footer className="px-9 pb-5 text-[10px] muted flex justify-between">

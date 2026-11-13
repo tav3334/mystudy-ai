@@ -1,3 +1,4 @@
+import { dailyLimit, indexingLimit } from "@/lib/document-processing/policy";
 import { createHash } from "node:crypto";
 import "server-only";
 import { required } from "@/lib/env";
@@ -10,20 +11,27 @@ export interface AIProvider {
     task: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY",
   ): Promise<number[]>;
 }
-async function reserve(userId: string, operation: string, model: string) {
+async function reserve(
+  userId: string,
+  operation: string,
+  model: string,
+  limit = dailyLimit(),
+) {
   return checked(
     await admin().rpc("reserve_ai_call", {
       p_user: userId,
-      p_limit: Math.max(
-        1,
-        Math.min(5000, Number(process.env.AI_DAILY_REQUEST_LIMIT ?? 50)),
-      ),
+      p_limit: limit,
       p_operation: operation,
       p_model: model,
     }),
   ) as string;
 }
-async function request(model: string, method: string, body: unknown) {
+async function request(
+  model: string,
+  method: string,
+  body: unknown,
+  timeoutMs = 90000,
+) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${method}`,
@@ -34,7 +42,7 @@ async function request(model: string, method: string, body: unknown) {
           "x-goog-api-key": required("GEMINI_API_KEY"),
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(90000),
+        signal: AbortSignal.timeout(timeoutMs),
       },
     );
     if (r.ok) return r.json();
@@ -95,13 +103,23 @@ class GeminiProvider implements AIProvider {
       return typeof cached.embedding === "string"
         ? JSON.parse(cached.embedding)
         : cached.embedding;
-    await reserve(userId, "embed", model);
-    const d = await request(model, "embedContent", {
-      model: `models/${model}`,
-      content: { parts: [{ text }] },
-      taskType: task,
-      outputDimensionality: 768,
-    });
+    await reserve(
+      userId,
+      "embed",
+      model,
+      task === "RETRIEVAL_DOCUMENT" ? indexingLimit() : dailyLimit(),
+    );
+    const d = await request(
+      model,
+      "embedContent",
+      {
+        model: `models/${model}`,
+        content: { parts: [{ text }] },
+        taskType: task,
+        outputDimensionality: 768,
+      },
+      30000,
+    );
     const values = d.embedding?.values as number[];
     if (
       !Array.isArray(values) ||

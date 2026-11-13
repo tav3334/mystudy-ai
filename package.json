@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "worker": "node --env-file=.env.local scripts/worker.mjs",
+    "worker": "node scripts/worker.mjs",
     "test:e2e": "playwright test",
     "format": "prettier --write src tests scripts *.ts *.mjs *.json README.md",
     "postinstall": "node scripts/prepare-monaco.mjs",

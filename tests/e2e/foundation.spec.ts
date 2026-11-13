@@ -10,26 +10,39 @@ test("honest empty dashboard and working navigation", async ({
   await expect(page.getByText("Vos modules vous attendent")).toBeVisible();
   if (isMobile)
     await page.getByRole("button", { name: "Ouvrir le menu" }).click();
+  await expect(
+    page.getByRole("link", { name: "Révision AI", exact: true }),
+  ).toHaveCount(0);
   await page.getByRole("link", { name: "Mes modules", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Mes modules", exact: true }),
   ).toBeVisible();
   expect(
     await page.evaluate(
-      () => document.documentElement.scrollWidth <= window.innerWidth,
+      () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
 });
-test("theme switch and tutor controls", async ({ page }) => {
+test("removed tutor redirects to QCM and theme remains usable", async ({
+  page,
+}) => {
   await page.goto("/revision");
+  await expect(page).toHaveURL(/\/qcm$/);
+  await expect(
+    page.getByRole("heading", { name: "Mes QCM", exact: true }),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Changer le thème" }).click();
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Révision AI", exact: true }),
+    page.getByRole("heading", { name: "Mes QCM", exact: true }),
   ).toBeVisible();
-  await page.getByLabel("Langue des explications").selectOption("Darija");
-  await page
-    .getByLabel("Votre question")
-    .fill("Explique les conteneurs Docker");
-  await expect(page.getByLabel("Envoyer la question")).toBeDisabled();
+});
+test("document library has no per-file indexing control", async ({ page }) => {
+  await page.goto("/documents");
+  await expect(
+    page.getByRole("button", { name: "Indexer", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Mes documents", exact: true }),
+  ).toBeVisible();
 });

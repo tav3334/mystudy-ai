@@ -79,10 +79,8 @@ export function Dashboard({ data }: { data: StudyData }) {
             className="mt-5 !bg-[#f2f7ee] !text-[#214536] hover:!bg-white"
             size="sm"
           >
-            <Link href={data.documents.length ? "/revision" : "/parametres"}>
-              {data.documents.length
-                ? "Commencer une révision"
-                : "Connecter mes cours"}
+            <Link href={data.documents.length ? "/qcm" : "/parametres"}>
+              {data.documents.length ? "Créer un QCM" : "Connecter mes cours"}
               <ArrowRight size={14} />
             </Link>
           </Button>
@@ -222,27 +220,25 @@ export function Dashboard({ data }: { data: StudyData }) {
         </section>
         <section className="panel p-5">
           <div className="flex items-center gap-2">
-            <span className="size-7 rounded-lg bg-violet-500/10 text-violet-600 grid place-items-center">
-              <Sparkles size={15} />
-            </span>
-            <h2 className="font-semibold">Votre copilote de révision</h2>
+            <ListChecks size={20} className="text-emerald-700" />
+            <h2 className="font-semibold">Vos prochaines étapes</h2>
           </div>
           <p className="text-xs muted mt-3 leading-6">
-            Une notion à éclaircir ? Posez votre question. Les réponses
-            s’appuient sur vos propres cours.
+            Vos cours sont préparés automatiquement. Choisissez ensuite comment
+            tester vos connaissances.
           </p>
           <div className="mt-4 space-y-2">
             {[
-              "Explique-moi un concept simplement",
-              "Résume les points clés de mon cours",
-              "Aide-moi à comprendre mes erreurs",
-            ].map((t) => (
+              { title: "Créer un QCM à partir de mes cours", href: "/qcm" },
+              { title: "Préparer un examen blanc", href: "/examens" },
+              { title: "Voir mes documents", href: "/documents" },
+            ].map((item) => (
               <Link
-                href={`/revision?q=${encodeURIComponent(t)}`}
-                key={t}
+                key={item.href}
+                href={item.href}
                 className="flex items-center justify-between rounded-lg bg-[var(--background)] border border-[var(--border)] p-3 text-[11px] hover:border-emerald-500/50"
               >
-                {t}
+                {item.title}
                 <ArrowUpRight size={13} className="muted" />
               </Link>
             ))}

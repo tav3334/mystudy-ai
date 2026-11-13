@@ -34,7 +34,7 @@ export default async function Settings({
     [
       "Gemini",
       !!process.env.GEMINI_API_KEY,
-      "Explications, QCM et recherche sémantique.",
+      "QCM, examens blancs et préparation des documents.",
     ],
   ] as const;
   return (

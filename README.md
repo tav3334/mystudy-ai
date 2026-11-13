@@ -1,153 +1,104 @@
 # MyStudy AI
 
-French personal study application built with Next.js App Router, strict TypeScript, React, Tailwind, Radix/shadcn-style components, Supabase and Gemini. The parent workspace and its existing files are preserved.
+Application personnelle de cours, QCM, examens blancs, TD/TP, flashcards et planning. Interface française, Next.js App Router, TypeScript strict, Supabase et Gemini.
 
-## Run locally
+## Utilisation quotidienne
 
-Node.js 22.23.2 and npm 12 were detected on this machine. Dependencies are installed.
+1. Connectez votre Google Drive dans Paramètres.
+2. Cliquez sur **Synchroniser Google Drive** pour découvrir les nouveaux cours.
+3. Les documents sont **indexés automatiquement sur Vercel**. Aucun terminal et aucun bouton par fichier ne sont nécessaires.
+4. Le bandeau indique la progression. Les documents déjà indexés sont utilisables immédiatement dans QCM.
+
+Les lots continuent côté serveur même si vous fermez la page. Le site relance aussi les tâches interrompues quand vous revenez, et deux tâches Vercel quotidiennes servent de reprise. Les limites d’exécution et quotas de Vercel/Gemini restent applicables.
+
+**Révision AI a été retirée à la demande de l’utilisateur.** Son ancien lien redirige vers QCM. Les QCM, examens, flashcards et exercices restent disponibles.
+
+## Quotas et indexation
+
+`AI_DAILY_REQUEST_LIMIT` plafonne les appels AI logiques par utilisateur et par jour UTC (50 par défaut). L’indexation conserve une petite réserve pour la génération des QCM : 5 appels au maximum, adaptée aux petits plafonds. Elle ne relève jamais ce plafond et n’active pas de facturation.
+
+Quand le budget d’indexation est atteint, les documents restent en attente, sans être marqués en échec. Les embeddings déjà calculés sont conservés. La reprise quotidienne ou la prochaine visite relance la file lorsque le quota est disponible. Les quotas du fournisseur s’appliquent en plus.
+
+Les appels sont protégés par un bail par utilisateur en base et des prises de tâches conditionnelles pour empêcher un double traitement. Un lot est borné à environ 230 secondes et 20 documents ; un appel serveur authentifié en programme la suite uniquement si des tâches sont exécutables. Les checkpoints conservent les embeddings entre lots. Une interruption d’hébergement est récupérée après expiration du bail ; une tâche interrompue peut être reprise après dix minutes.
+
+Les échecs temporaires sont retentés de façon limitée. Un PDF scanné nécessitant un OCR, un format non pris en charge ou un PDF protégé demande une correction du document. La synchronisation globale permet de relancer les échecs temporaires après correction de la configuration.
+
+## Installation locale
+
+Node.js 22 recommandé.
 
 ```powershell
-cd "C:\Users\hp\OneDrive\Musique\MyStudy AI\mystudy-ai"
+npm ci --userconfig=NUL
 Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Open http://localhost:3000. Without Supabase configuration, the app displays a labeled setup state with empty data, never simulated activity. Once Supabase is configured, dashboard routes require sign-in. Restart after environment changes.
+`--userconfig=NUL` contourne un paramètre npm global incompatible sur la machine Windows de développement ; ailleurs, `npm ci` normal convient. Les anciennes commandes `npm run worker` et `node scripts/worker.mjs` affichent seulement un message : elles ne sont plus nécessaires.
 
-For a clean install on this Windows machine, use `npm ci --userconfig=NUL`: the global npm configuration has an incompatible `allow-scripts` setting. No global settings were changed. On other systems use normal `npm ci`, or `--userconfig=/dev/null` if needed.
+Sans configuration Supabase, le site présente un état de configuration vide, sans fausses statistiques. Avec Supabase, les pages personnelles sont protégées par connexion.
 
-## Supabase setup
+## Configuration Supabase
 
-1. Create your own Supabase project.
-2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` from Project Settings → API in `.env.local`.
-3. Set `SUPABASE_SERVICE_ROLE_KEY` server-side. Never prefix it with `NEXT_PUBLIC_` or put it in client code.
-4. Run **all files in `supabase/migrations/` in filename order** using the SQL editor. Alternatively: `supabase link --project-ref YOUR_REF` then `supabase db push` with the Supabase CLI.
-5. Enable email/password Auth. Set Site URL to `http://localhost:3000` and allow redirect `http://localhost:3000/auth/callback`. Configure equivalent HTTPS production URLs when deploying.
-6. Create an account at `/login`, confirm its email and sign in. Production email may require your own SMTP provider; Supabase email quotas apply.
+- Définir `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+- Appliquer les migrations de `supabase/migrations/` dans l’ordre. Si les 25 tables existent déjà, aucune nouvelle migration n’est nécessaire pour l’indexation automatique.
+- Activer email/password Auth, Site URL et redirection `/auth/callback` sur le domaine réel.
+- La clé serveur ne doit jamais être publiée sur GitHub ou préfixée `NEXT_PUBLIC_`.
 
-Migrations create ownership RLS, pgvector, jobs, caches, quotas and transactional scoring. Browser clients can read their own learning data; learning writes use authorized server routes. OAuth credentials and privileged RPCs are inaccessible to authenticated browser clients.
+Les tables utilisent RLS, les jetons Google sont chiffrés, et les fonctions de scoring/quota sont réservées au serveur. Les tentatives et réponses restent persistantes.
 
-## Independent Google Drive OAuth
+## Google Drive
 
-ChatGPT's Google Drive connection does not authorize this app.
+Activer Drive API dans Google Cloud et créer un client OAuth **Web application**. Configurer l’audience et ajouter son compte Google comme utilisateur test si nécessaire. Autoriser la redirection exacte :
 
-1. Enable Google Drive API in your own Google Cloud project.
-2. Configure the consent screen and a **Web application** OAuth client. Add your own account as a test user while testing.
-3. Register `http://localhost:3000/api/drive/callback` as a redirect URI. Add `https://YOUR_DOMAIN/api/drive/callback` for production.
-4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` locally.
-5. Generate a 32-byte encryption key:
+```text
+https://VOTRE_DOMAINE/api/drive/callback
+```
 
-   ```powershell
-   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-   ```
+Variables : `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_DRIVE_ROOT_ID`, `TOKEN_ENCRYPTION_KEY`. Le dossier racine de ce projet est `1rqYB2_0rdDhoWJbqzPNOhFtNedQZgERn`.
 
-   Save as `TOKEN_ENCRYPTION_KEY`. Back it up securely; changing it requires Google reconnection.
+L’autorisation est `https://www.googleapis.com/auth/drive.readonly`, nécessaire pour découvrir les dossiers préexistants. Les originaux ne sont jamais modifiés. OAuth utilise state lié au compte, PKCE, cookie HttpOnly et chiffrement AES-256-GCM. La connexion Google de ChatGPT ne remplace pas celle de cette application. Les règles Google de test et vérification s’appliquent.
 
-6. Keep `GOOGLE_DRIVE_ROOT_ID=1rqYB2_0rdDhoWJbqzPNOhFtNedQZgERn` unless intentionally choosing another folder.
-7. In Paramètres, connect your Google account and click **Synchroniser Google Drive**.
+## Gemini et Vercel
 
-Scope: `https://www.googleapis.com/auth/drive.readonly`. Broad read access is needed to discover the pre-existing folder; `drive.file` would not cover it automatically. Code restricts traversal to the configured root and never writes/deletes Drive files. The Google account must have access to that root. This is a restricted scope; verification, security assessment and test-mode refresh-token expiry rules may apply. See [Google scope guidance](https://developers.google.com/workspace/drive/api/guides/api-specific-auth) and [restricted-scope requirements](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).
+Variables serveur : `GEMINI_API_KEY`, `GEMINI_MODEL` (défaut `gemini-2.5-flash`), `GEMINI_EMBEDDING_MODEL` (défaut `gemini-embedding-001`), `AI_DAILY_REQUEST_LIMIT`.
 
-OAuth uses user-bound state, PKCE, HttpOnly SameSite cookies and AES-256-GCM encrypted credentials. No service account is used. Keep passwords and API secrets on your machine, never in chat.
+Les embeddings ont 768 dimensions. Un changement de modèle d’embedding demande de reconstruire l’index sans mélanger les espaces vectoriels.
 
-## Gemini and document worker
+Pour Vercel, définir `NEXT_PUBLIC_APP_URL` avec l’origine HTTPS exacte, ainsi que `CRON_SECRET` et `TOKEN_ENCRYPTION_KEY`. Ces deux derniers doivent être des secrets aléatoires distincts ; conserver la clé de chiffrement après connexion Google.
 
-1. Create a Gemini API key in your own AI Studio account and set `GEMINI_API_KEY`. Check your account's quotas, availability, data handling and billing settings. No billing is enabled by this app.
-2. Defaults: `GEMINI_MODEL=gemini-2.5-flash`, `GEMINI_EMBEDDING_MODEL=gemini-embedding-001`, normalized 768-dimensional vectors. Changing embedding models requires a rebuilt index; do not mix embedding spaces.
-3. Set `AI_DAILY_REQUEST_LIMIT` (default 50). Embeddings, generation and evidence review consume quota. Failed logical calls remain counted. Retries can make several provider attempts per reservation, so this limit is not a billing guarantee.
-4. Generate another random secret with the Node command above and set `CRON_SECRET`. Set `NEXT_PUBLIC_APP_URL=http://localhost:3000`.
-5. With `npm run dev` running, open another terminal and run:
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
 
-   ```powershell
-   cd "C:\Users\hp\OneDrive\Musique\MyStudy AI\mystudy-ai"
-   npm run worker
-   ```
+Déployer avec Node.js 22 et `npm run build`. Redéployer après toute modification des variables. `CRON_SECRET` authentifie les tâches quotidiennes et les continuations internes ; il n’est jamais transmis au navigateur. Les continuations utilisent l’URL de production ; une protection d’accès Vercel supplémentaire peut les bloquer et doit être configurée pour les appels internes.
 
-Synchronization automatically queues changed documents. The Documents **Indexer** button queues a retry; the worker performs extraction/indexing. Refresh Documents to inspect status. Intermediate embeddings are cached so a later retry can resume after quota failure. Stop the worker with Ctrl+C.
+Aucun hébergeur/ordonnanceur payant supplémentaire n’est nécessaire. Les fonctions automatiques restent soumises au budget et aux limites du plan Vercel. `vercel.json` conserve les tâches quotidiennes compatibles avec le plan Hobby.
 
-`vercel.json` declares daily sync and one daily worker invocation. Each invocation processes **one document**. Use the local worker or deliberately configure another protected sequential scheduler for a backlog. No paid/high-frequency scheduler has been provisioned. Verify current Vercel execution-time and cron limits for your plan.
+## Formats et limites
 
-### Supported files and limits
+PDF avec texte et pages ; DOCX sans pagination originale ; PPTX avec numéros de diapositives ; TXT/Markdown UTF-8 ; Google Docs export texte ; Google Slides export PPTX. Maximum 20 MiB et 150 chunks par document, archives Office bornées. Le moteur PDF et ses composants natifs sont explicitement inclus dans les fonctions d’indexation Vercel.
 
-PDF text with page references; DOCX text without original pagination; PPTX text with slide references; UTF-8 TXT/Markdown; Google Docs text export and Google Slides PPTX export. Input limit 20 MiB, bounded Office archive sizes, maximum 150 chunks/document. Split larger courses by chapter.
+OCR et interprétation multimodale ne sont pas implémentés. Les schémas, tableaux et formules ne sont pas intégralement représentés par l’extraction de texte. Fournir une version OCR pour les scans.
 
-**Built-in OCR and multimodal interpretation are not implemented.** Scanned/no-text PDFs report OCR required. Produce an OCR PDF externally, upload it yourself and synchronize. Text extraction does not fully represent diagrams, formulas, tables or screenshots. This app never changes original Drive files.
-
-## Live acceptance walkthrough
-
-After configuring services:
-
-1. Sign in, connect your own Google account and synchronize.
-2. Confirm the actual root folders appear as modules. No module count or names are seeded.
-3. Start the worker and wait for a real course PDF to become **Indexé**.
-4. Select it in QCM, request 10 questions and generate. Fewer are returned if evidence is insufficient.
-5. Answer the quiz, inspect explanations/source links, then reload QCM and reopen the saved correction.
-6. Add or modify a Drive course yourself and synchronize; verify discovery without duplicates or lost attempts.
-7. Try a course-grounded tutor question in French, Darija, Arabic and English. General knowledge is opt-in and labeled separately.
-8. Generate an exam, save responses, reload/resume and confirm its original deadline remains.
-
-**This live walkthrough has not been executed:** no Supabase project credentials, Google OAuth credentials or Gemini key were provided. Automated local tests do not replace it.
-
-## Implemented
-
-- Responsive French shell, eleven study screens, mobile navigation, document-name search, light/dark themes, accessible controls and loading/error/empty states.
-- Supabase sign-up/sign-in/sign-out, email callback, cookie refresh and protected routes.
-- Read-only Drive OAuth, encrypted tokens, paginated recursive module/category discovery, Changes API cursor checks, conservative full-tree reconciliation after changes, version tracking, soft retirement and sync logs/locking.
-- Background extraction, deterministic chunks, embedding caching, pgvector retrieval with keyword ranking, processing errors/retries.
-- Gemini provider abstraction, JSON/Zod validation, exact citation quotes, second AI evidence review, cached grounded responses, opt-in general explanations, rate limits and quotas. AI evidence review reduces errors but does not prove correctness.
-- Single-answer, multiple-answer and true/false quizzes; configurable sources/chapter/count/difficulty/language; saved answers, atomic scoring, detailed saved corrections and history.
-- Timed QCM exams with server-held deadlines, resume, late-autosave rejection, automatic submission while open, saved-answer grading after expiry, and scores out of 20. Closed-browser expiry finalizes on resume/submission, not through a separate service.
-- Print/save-to-PDF for completed exam questions/corrections.
-- TD/TP exercise extraction, hints/proposed AI solutions, locally served Monaco editor, saved attempts and completion. No student code execution.
-- Flashcards with SM-2 review scheduling and daily queues.
-- Editable planning with objectives, modules, durations and exam dates; suggestions never silently change schedules.
-- Recharts results, topic accuracy, recorded session duration and completed exercises from actual activity.
-
-The schema shares `quizzes.kind` and `questions` between quizzes/exams; `exam_attempts` contains resumable sessions and `quiz_attempts` contains completed scores.
-
-## Remaining scope
-
-This is an initial implementation, not the entire production roadmap:
-
-- Short/open/fill-in-the-blank questions, explicit grading rubrics, estimated AI grading and mixed practical exams.
-- OCR and multimodal provider paths.
-- Pre-exam downloadable PDF and dedicated PDF generation (current export uses browser print after completion).
-- Automated weekly revision planning using all exam/availability/difficulty signals, streaks and full module-mastery estimates.
-- AI exercise-submission feedback (current practice supports hints, saving and side-by-side self-comparison).
-- Hosted long-running worker, automatic finalization of abandoned exams, resumable large-tree sync and operational monitoring.
-- Generated Supabase schema types, additional database JSON constraints, production CSP tuned for Monaco/Next.js, password reset, account deletion/export and OAuth disconnect UI.
-- Real-service integration tests, authenticated browser journeys and deployment to your accounts.
-
-## Tests and build
-
-Local verification on 12 November 2026: 29 unit/database tests passed; 8 desktop/mobile browser tests passed; TypeScript, lint and the production build passed. Dependency installation reported zero known vulnerabilities. External-service acceptance remains pending configuration.
+## Vérification
 
 ```powershell
 npm run typecheck
 npm run lint
 npm test
-npx playwright install chromium
 npm run test:e2e
 npm run build
-npm audit --userconfig=NUL
+node scripts/check-pdf-bundle.mjs
 ```
 
-Tests cover extraction from an actual PDF buffer and PPTX archives, AI schemas/citations/deduplication, grading, Drive reconciliation, chunks and SM-2. Database tests apply actual migrations to embedded PostgreSQL with pgvector and exercise RLS roles, cross-account access, token secrecy, privileged RPCs, quotas, durable/idempotent grading and expired exams. The harness simulates Supabase's auth schema/roles; hosted Auth/OAuth services are not tested.
+Les tests couvrent extraction PDF/PPTX, validation des questions, citations, déduplication, scores, SM-2, synchronisation Drive, PostgreSQL/pgvector, isolation RLS, scoring durable, quotas, baux d’indexation, pauses et continuations. Les tests navigateur utilisent l’état sans configuration externe et vérifient la navigation, la suppression de Révision AI et l’absence de boutons d’indexation par fichier. Ils ne remplacent pas un test avec les comptes Google/Supabase réels.
 
-Playwright tests the unconfigured setup state on desktop/mobile, navigation, themes, all screens and worker authorization. Run those setup-state tests without configured Supabase credentials. Screenshots go into ignored `artifacts/`.
+## Fonctions et limites actuelles
 
-## Deploy to Vercel
+QCM à réponse unique/multiple et vrai-faux, examens chronométrés et corrections enregistrées, export par impression après correction, exercices avec Monaco et solutions proposées, flashcards SM-2, planning manuel et statistiques sur l’activité réelle. L’AI vérifie les citations et effectue un second contrôle de support, sans garantir l’absence d’erreur : consulter les sources.
 
-1. Import this **mystudy-ai directory** as a Next.js project, Node.js 22, build `npm run build`.
-2. Add `.env.example` values through Vercel environment settings. Keep `.env.local` out of Git. Set `NEXT_PUBLIC_APP_URL` to the exact HTTPS origin. Public Supabase configuration must exist at build time.
-3. Apply all database migrations and add production Supabase/Google redirect URLs.
-4. Set `CRON_SECRET` in Vercel. Vercel cron sends it as a Bearer credential. Protect separate worker requests similarly; never put credentials in URLs.
-5. Run the live acceptance walkthrough, including a second account isolation check.
+Restent hors périmètre actuel : questions ouvertes et correction par grille, OCR/multimodal, génération PDF avant examen, planning hebdomadaire entièrement automatique, feedback AI sur les solutions soumises, mot de passe oublié et gestion complète de suppression/export de compte.
 
-No external deployment, paid service, Drive mutation or external database change was performed during implementation.
+## Structure
 
-## Source layout
-
-`src/app/(dashboard)` screens; `src/app/api` authorized handlers; `src/components` interfaces; `src/lib/google-drive` OAuth/sync; `src/lib/document-processing` extraction/worker; `src/lib/ai` and `src/lib/rag` providers/evidence/retrieval; `supabase/migrations` schema/RLS/transactions; `scripts` local worker/assets; `tests` unit/database/browser coverage.
-
-References: [Next.js](https://nextjs.org/docs/app/getting-started/installation), [Supabase SSR](https://supabase.com/docs/guides/auth/server-side), [Drive Changes](https://developers.google.com/workspace/drive/api/guides/manage-changes), [Gemini embeddings](https://ai.google.dev/gemini-api/docs/embeddings).
+`src/app/(dashboard)` : écrans ; `src/app/api` : handlers autorisés ; `src/lib/document-processing` : file automatique, lots et checkpoints ; `src/lib/google-drive` : OAuth/sync ; `src/lib/ai` : génération et validation ; `supabase/migrations` : schéma/RLS ; `tests` : tests unitaires, base et navigateur.
