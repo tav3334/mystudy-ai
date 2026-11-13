@@ -26,8 +26,14 @@ export async function extract(
   if (buffer.length > 20 * 1024 * 1024)
     throw new Error("Document trop volumineux (20 Mo maximum).");
   if (mime === "application/pdf" || /\.pdf$/i.test(name)) {
+    const { getData, CanvasFactory } = await import("pdf-parse/worker");
     const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: buffer, isEvalSupported: false });
+    PDFParse.setWorker(getData());
+    const parser = new PDFParse({
+      data: buffer,
+      isEvalSupported: false,
+      CanvasFactory,
+    });
     try {
       const result = await parser.getText();
       const pages = result.pages.map((p) => ({

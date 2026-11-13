@@ -1,3 +1,4 @@
+import { processingFailure, type ProcessingStage } from "./errors";
 import "server-only";
 import { admin, checked } from "@/lib/supabase/server";
 import { accessToken, driveFetch } from "@/lib/google-drive/client";
@@ -9,6 +10,7 @@ export async function processNext() {
   const jobs = checked(await db.rpc("claim_document_job"));
   const job = jobs?.[0];
   if (!job) return { processed: false };
+  let stage: ProcessingStage = "load_document";
   try {
     const doc = checked(
       await db
@@ -35,7 +37,9 @@ export async function processNext() {
     );
     if (doc.size_bytes > 20 * 1024 * 1024)
       throw new Error("Document trop volumineux (20 Mo maximum).");
+    stage = "drive_auth";
     const token = await accessToken(job.user_id);
+    stage = "download";
     let mime = doc.mime_type;
     let name = doc.name;
     let response: Response;
@@ -75,7 +79,9 @@ export async function processNext() {
       }
       parts.push(value);
     }
+    stage = "extract";
     const sections = await extract(Buffer.concat(parts), mime, name);
+    stage = "chunk";
     const chunks = chunkSections(sections);
     if (!chunks.length)
       throw new Error("Aucun texte exploitable dans ce document.");
@@ -83,6 +89,7 @@ export async function processNext() {
       throw new Error(
         "Document trop long : séparez-le en chapitres (150 chunks maximum).",
       );
+    stage = "embed";
     const previous =
       checked(
         await db
@@ -126,6 +133,7 @@ export async function processNext() {
         );
       rows.push({ ...c, embedding });
     }
+    stage = "save";
     checked(
       await db.rpc("finish_document", {
         p_job: job.id,
@@ -137,13 +145,14 @@ export async function processNext() {
     );
     return { processed: true, documentId: doc.id };
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Traitement impossible";
-    const safe =
-      /^(PDF sans|Format non|Document trop|Présentation trop|Aucun texte)/.test(
-        message,
-      )
-        ? message
-        : "Indexation interrompue. Vérifiez la connexion Drive et les quotas AI, puis réessayez.";
+    const problem = processingFailure(e, stage);
+    const safe = problem.message;
+    console.error("document_processing_failed", {
+      jobId: job.id,
+      documentId: job.document_id,
+      code: problem.code,
+      stage,
+    });
     await db
       .from("document_processing_jobs")
       .update({ status: "failed", error: safe })
@@ -153,6 +162,13 @@ export async function processNext() {
       .update({ status: "failed", processing_error: safe })
       .eq("id", job.document_id)
       .eq("version", job.version);
-    return { processed: true, failed: true };
+    return {
+      processed: true,
+      failed: true,
+      documentId: job.document_id,
+      error: safe,
+      errorCode: problem.code,
+      stage,
+    };
   }
 }

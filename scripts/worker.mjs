@@ -29,7 +29,7 @@ while (!stopping) {
     if (result.processed)
       console.log(
         result.failed
-          ? "Document processing failed. See Documents for details."
+          ? `Échec [${result.errorCode ?? "UNKNOWN"}] (${result.stage ?? "traitement"}) : ${result.error ?? "Consultez Documents."}`
           : "Document processed.",
       );
     else await new Promise((r) => setTimeout(r, 5000));
