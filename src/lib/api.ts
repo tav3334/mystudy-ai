@@ -1,3 +1,4 @@
+import { AIProviderError } from "@/lib/ai/errors";
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
@@ -69,6 +70,11 @@ export async function readJson<T extends z.ZodType>(
   return schema.parse(JSON.parse(raw));
 }
 export function failure(error: unknown) {
+  if (error instanceof AIProviderError)
+    return NextResponse.json(
+      { error: error.message, code: error.code },
+      { status: error.status },
+    );
   if (error instanceof HttpError)
     return NextResponse.json(
       { error: error.message },

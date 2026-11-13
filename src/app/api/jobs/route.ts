@@ -1,3 +1,4 @@
+import { diagnoseGeneration } from "@/lib/ai/provider";
 import { indexingState } from "@/lib/document-processing/queue";
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse, after } from "next/server";
@@ -24,6 +25,14 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   try {
     const users = await connectedIndexingUsers();
+    if (request.nextUrl.searchParams.get("mode") === "ai-check") {
+      if (!users.length)
+        return NextResponse.json(
+          { ok: false, code: "NO_CONNECTED_ACCOUNT" },
+          { status: 409 },
+        );
+      return NextResponse.json(await diagnoseGeneration(users[0].user_id));
+    }
     if (request.nextUrl.searchParams.get("mode") === "status")
       return NextResponse.json({
         automatic: true,
