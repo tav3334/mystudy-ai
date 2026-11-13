@@ -75,7 +75,7 @@ export function Practice({
           value={doc}
           onChange={(e) => setDoc(e.target.value)}
         >
-          <option value="">Choisir un TD ou TP indexé</option>
+          <option value="">Choisir un TD ou TP prêt</option>
           {data.documents
             .filter(
               (d) => d.status === "ready" && ["TD", "TP"].includes(d.category),
@@ -228,7 +228,7 @@ export function Practice({
             La compréhension vient aussi en pratiquant.
           </h2>
           <p className="muted text-sm mt-3">
-            Choisissez un document TD / TP indexé pour retrouver ses exercices.
+            Choisissez un document TD / TP prêt pour retrouver ses exercices.
           </p>
         </section>
       )}

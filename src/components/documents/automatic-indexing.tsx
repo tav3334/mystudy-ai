@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, LoaderCircle, PauseCircle, Cloud } from "lucide-react";
+import { CheckCircle2, LoaderCircle, Cloud } from "lucide-react";
 type Status = {
   connected: boolean;
   ready: number;
@@ -9,10 +9,6 @@ type Status = {
   pending: number;
   processing: number;
   failed: number;
-  paused: boolean;
-  pauseReason?: "provider" | "daily";
-  reserved: number;
-  retryAt: string;
 };
 export function AutomaticIndexing({ enabled }: { enabled: boolean }) {
   const [state, setState] = useState<Status | null>(null);
@@ -45,7 +41,7 @@ export function AutomaticIndexing({ enabled }: { enabled: boolean }) {
           }
         }
       } catch {
-        /* Next visible poll retries after a connectivity loss. */
+        /* Next visible poll retries a lost connection. */
       } finally {
         if (!stopped) timer = setTimeout(tick, 30000);
       }
@@ -59,14 +55,7 @@ export function AutomaticIndexing({ enabled }: { enabled: boolean }) {
   }, [enabled, router]);
   if (!state?.connected || !state.total) return null;
   const waiting = state.pending + state.processing;
-  const paused = state.paused && waiting > 0;
-  const Icon = paused
-    ? PauseCircle
-    : waiting
-      ? LoaderCircle
-      : state.failed
-        ? Cloud
-        : CheckCircle2;
+  const Icon = waiting ? LoaderCircle : state.failed ? Cloud : CheckCircle2;
   return (
     <div
       role="status"
@@ -74,32 +63,26 @@ export function AutomaticIndexing({ enabled }: { enabled: boolean }) {
     >
       <Icon
         size={17}
-        className={`${paused ? "text-amber-600" : "text-emerald-600"} shrink-0 ${waiting && !paused ? "animate-spin" : ""}`}
+        className={`text-emerald-600 shrink-0 ${waiting ? "animate-spin" : ""}`}
       />
       <div className="flex-1">
         <p className="font-semibold">
-          {paused
-            ? "Indexation en pause · quota protégé"
-            : waiting
-              ? "Indexation automatique en cours"
-              : state.failed
-                ? "Documents à vérifier"
-                : "Bibliothèque à jour"}
+          {waiting
+            ? "Préparation automatique des cours"
+            : state.failed
+              ? "Documents à vérifier"
+              : "Vos cours sont prêts"}
           <span className="font-normal muted ml-2">
-            {state.ready}/{state.total} documents indexés
-            {waiting ? ` · ${waiting} en attente` : ""}
+            {state.ready}/{state.total} prêts
+            {waiting ? ` · ${waiting} à préparer` : ""}
           </span>
         </p>
         <p className="muted mt-1 leading-5">
-          {paused
-            ? state.pauseReason === "provider"
-              ? "Gemini a demandé une pause. Nouvelle tentative automatique dans environ une heure, selon les quotas du fournisseur."
-              : `Reprise automatique après le renouvellement du quota. Jusqu’à ${state.reserved} requêtes restent réservées aux QCM ; aucune commande n’est nécessaire.`
-            : waiting
-              ? "Les cours sont préparés côté serveur. Vous pouvez continuer à utiliser le site ou fermer cette page."
-              : state.failed
-                ? `${state.failed} fichier(s) demandent une vérification ; le détail apparaît dans Documents.`
-                : "Les nouveaux documents seront préparés automatiquement après leur synchronisation."}
+          {waiting
+            ? "Le texte des documents est préparé sans AI et sans consommer votre quota Gemini. Vous pouvez fermer cette page."
+            : state.failed
+              ? `${state.failed} fichier(s) demandent une vérification dans Documents. Les autres cours sont disponibles pour vos QCM.`
+              : "Aucun appel AI pour préparer les documents. Gemini intervient uniquement lorsque vous demandez une génération."}
         </p>
       </div>
     </div>

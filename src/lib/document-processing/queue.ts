@@ -1,12 +1,6 @@
 import "server-only";
 import { admin, checked } from "@/lib/supabase/server";
-import {
-  dailyLimit,
-  indexingLimit,
-  nextQuotaReset,
-  recoverableFailure,
-  providerCooldownUntil,
-} from "./policy";
+import { dailyLimit, recoverableFailure } from "./policy";
 const leaseBucket = "automatic-indexing-lease";
 export async function acquireIndexingLease(userId: string) {
   const db = admin();
@@ -45,7 +39,7 @@ export async function releaseIndexingLease(userId: string, token: string) {
 export async function indexingState(userId: string) {
   const db = admin();
   const day = new Date().toISOString().slice(0, 10);
-  const [docs, usage, jobs, cooldown] = await Promise.all([
+  const [docs, usage, jobs] = await Promise.all([
     db
       .from("documents")
       .select("status")
@@ -55,6 +49,7 @@ export async function indexingState(userId: string) {
       .from("ai_usage_logs")
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
+      .eq("operation", "generate")
       .gte("created_at", day),
     db
       .from("document_processing_jobs")
@@ -65,20 +60,12 @@ export async function indexingState(userId: string) {
       .or(
         `locked_at.is.null,locked_at.lt.${new Date(Date.now() - 60000).toISOString()}`,
       ),
-    db
-      .from("api_rate_limits")
-      .select("window_start")
-      .eq("user_id", userId)
-      .eq("bucket", "indexing-provider-cooldown")
-      .maybeSingle(),
   ]);
   const rows = checked(docs) ?? [];
-  const providerRetry = providerCooldownUntil(checked(cooldown)?.window_start);
   if (usage.error) throw new Error("Cannot read indexing quota");
   if (jobs.error) throw new Error("Cannot read indexing queue");
   const used = usage.count ?? 0;
   const limit = dailyLimit();
-  const budget = indexingLimit(limit);
   return {
     total: rows.length,
     ready: rows.filter((d) => d.status === "ready").length,
@@ -88,10 +75,11 @@ export async function indexingState(userId: string) {
     failed: rows.filter((d) => d.status === "failed").length,
     used,
     limit,
-    reserved: limit - budget,
-    paused: used >= budget || !!providerRetry,
-    pauseReason: providerRetry ? "provider" : "daily",
-    retryAt: providerRetry ?? nextQuotaReset(),
+    reserved: 0,
+    paused: false,
+    usesAI: false,
+    pauseReason: null,
+    retryAt: null,
     runnable: jobs.count ?? 0,
   };
 }

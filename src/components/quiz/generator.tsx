@@ -40,7 +40,7 @@ export function QuizGenerator({
   );
   async function generate(values: Fields) {
     if (!selected.length) {
-      toast.error("Sélectionnez au moins un document indexé.");
+      toast.error("Sélectionnez au moins un document prêt.");
       return;
     }
     setBusy(true);
@@ -100,7 +100,7 @@ export function QuizGenerator({
         </label>
         <div className="border border-[var(--border)] rounded-xl overflow-hidden">
           <div className="bg-[var(--background)] p-3 text-[10px] muted uppercase tracking-wide">
-            Documents indexés · {selected.length} sélectionné(s)
+            Documents prêts · {selected.length} sélectionné(s)
           </div>
           {docs.length ? (
             docs.map((d) => (
@@ -130,13 +130,13 @@ export function QuizGenerator({
               <FileText className="muted mx-auto mb-3" />
               <p className="text-xs muted leading-6">
                 Vos cours sont préparés automatiquement après la
-                synchronisation. Ils apparaîtront ici une fois indexés.
+                synchronisation. Ils apparaîtront ici une fois prêts.
               </p>
             </div>
           )}
         </div>
         <p className="text-[11px] muted leading-5">
-          Seuls les documents indexés sont disponibles. Les questions seront
+          Seuls les documents prêts sont disponibles. Les questions seront
           basées sur des extraits sélectionnés, avec leurs sources.
         </p>
       </section>

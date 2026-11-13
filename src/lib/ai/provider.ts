@@ -1,15 +1,12 @@
-import { dailyLimit, indexingLimit } from "@/lib/document-processing/policy";
-import { createHash } from "node:crypto";
+import {
+  dailyLimit,
+  generationCeiling,
+} from "@/lib/document-processing/policy";
 import "server-only";
 import { required } from "@/lib/env";
 import { admin, checked } from "@/lib/supabase/server";
 export interface AIProvider {
   generate(userId: string, system: string, prompt: string): Promise<string>;
-  embed(
-    userId: string,
-    text: string,
-    task: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY",
-  ): Promise<number[]>;
 }
 async function reserve(
   userId: string,
@@ -17,10 +14,18 @@ async function reserve(
   model: string,
   limit = dailyLimit(),
 ) {
+  const db = admin();
+  const legacy = await db
+    .from("ai_usage_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("operation", "embed")
+    .gte("created_at", new Date().toISOString().slice(0, 10));
+  if (legacy.error) throw new Error("Cannot read generation usage");
   return checked(
-    await admin().rpc("reserve_ai_call", {
+    await db.rpc("reserve_ai_call", {
       p_user: userId,
-      p_limit: limit,
+      p_limit: generationCeiling(limit, legacy.count ?? 0),
       p_operation: operation,
       p_model: model,
     }),
@@ -80,70 +85,6 @@ class GeminiProvider implements AIProvider {
     if (!text || d.candidates?.[0]?.finishReason !== "STOP")
       throw new Error("AI response incomplete");
     return text;
-  }
-  async embed(
-    userId: string,
-    text: string,
-    task: "RETRIEVAL_DOCUMENT" | "RETRIEVAL_QUERY",
-  ) {
-    const model = process.env.GEMINI_EMBEDDING_MODEL ?? "gemini-embedding-001";
-    const hash = createHash("sha256")
-      .update(task + ":" + text)
-      .digest("hex");
-    const cached = checked(
-      await admin()
-        .from("embedding_cache")
-        .select("embedding")
-        .eq("user_id", userId)
-        .eq("content_hash", hash)
-        .eq("model", model)
-        .maybeSingle(),
-    );
-    if (cached)
-      return typeof cached.embedding === "string"
-        ? JSON.parse(cached.embedding)
-        : cached.embedding;
-    await reserve(
-      userId,
-      "embed",
-      model,
-      task === "RETRIEVAL_DOCUMENT" ? indexingLimit() : dailyLimit(),
-    );
-    const d = await request(
-      model,
-      "embedContent",
-      {
-        model: `models/${model}`,
-        content: { parts: [{ text }] },
-        taskType: task,
-        outputDimensionality: 768,
-      },
-      30000,
-    );
-    const values = d.embedding?.values as number[];
-    if (
-      !Array.isArray(values) ||
-      values.length !== 768 ||
-      values.some((v) => !Number.isFinite(v))
-    )
-      throw new Error("Invalid embedding");
-    const norm = Math.sqrt(values.reduce((s, v) => s + v * v, 0));
-    if (!norm) throw new Error("Empty embedding");
-    const normalized = values.map((v) => v / norm);
-    checked(
-      await admin()
-        .from("embedding_cache")
-        .upsert(
-          {
-            user_id: userId,
-            content_hash: hash,
-            model,
-            embedding: JSON.stringify(normalized),
-          },
-          { onConflict: "user_id,content_hash,model" },
-        ),
-    );
-    return normalized;
   }
 }
 export const ai: AIProvider = new GeminiProvider();

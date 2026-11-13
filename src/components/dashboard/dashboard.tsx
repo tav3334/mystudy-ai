@@ -123,7 +123,7 @@ export function Dashboard({ data }: { data: StudyData }) {
           {
             label: "Documents disponibles",
             value: data.documents.length,
-            caption: `${data.documents.filter((d) => d.status === "ready").length} documents indexés`,
+            caption: `${data.documents.filter((d) => d.status === "ready").length} documents prêts`,
             Icon: Files,
             color: "bg-blue-500/10 text-blue-600",
           },

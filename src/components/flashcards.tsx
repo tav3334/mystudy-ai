@@ -64,7 +64,7 @@ export function Flashcards({ data }: { data: StudyData }) {
           value={doc}
           onChange={(e) => setDoc(e.target.value)}
         >
-          <option value="">Choisir un document indexé</option>
+          <option value="">Choisir un document prêt</option>
           {data.documents
             .filter((d) => d.status === "ready")
             .map((d) => (

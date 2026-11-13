@@ -80,11 +80,11 @@ export function DocumentList({
                   >
                     {(
                       {
-                        ready: "Indexé",
-                        pending: "En attente automatique",
-                        queued: "En attente",
-                        processing: "En cours",
-                        failed: "Échec",
+                        ready: "Prêt pour les QCM",
+                        pending: "À préparer",
+                        queued: "À préparer",
+                        processing: "Préparation en cours",
+                        failed: "À vérifier",
                         unsupported: "Non pris en charge",
                       } as Record<string, string>
                     )[d.status] ?? d.status}

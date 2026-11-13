@@ -75,6 +75,14 @@ export function failure(error: unknown) {
       { error: "Votre limite quotidienne AI est atteinte." },
       { status: 429 },
     );
+  if (error instanceof Error && error.message === "AI provider failed (429)")
+    return NextResponse.json(
+      {
+        error:
+          "Le quota Gemini de votre projet Google est atteint. La préparation des documents reste disponible ; réessayez la génération lorsque le quota du fournisseur est renouvelé.",
+      },
+      { status: 429 },
+    );
   console.error(
     "Request failed",
     error instanceof Error ? error.name : "Unknown",

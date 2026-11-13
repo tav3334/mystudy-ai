@@ -66,6 +66,7 @@ export async function loadData() {
     db
       .from("ai_usage_logs")
       .select("id", { count: "exact", head: true })
+      .eq("operation", "generate")
       .gte("created_at", new Date().toISOString().slice(0, 10)),
   ]);
   return {

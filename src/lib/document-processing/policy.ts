@@ -4,8 +4,15 @@ export function dailyLimit(value = process.env.AI_DAILY_REQUEST_LIMIT) {
     ? Math.min(5000, Math.floor(parsed))
     : 50;
 }
-export function indexingLimit(limit = dailyLimit()) {
-  return Math.max(0, limit - Math.min(5, Math.max(1, Math.floor(limit / 10))));
+// The existing atomic SQL quota counts all historical operations. Offset only legacy embeddings,
+// so the configured ceiling remains the number of generation requests, without deleting usage history.
+export function generationCeiling(limit: number, legacyEmbeddings: number) {
+  return (
+    limit +
+    (Number.isSafeInteger(legacyEmbeddings) && legacyEmbeddings > 0
+      ? legacyEmbeddings
+      : 0)
+  );
 }
 export function nextQuotaReset(now = Date.now()) {
   const date = new Date(now);
@@ -25,14 +32,4 @@ export class ProcessingYield extends Error {
     super("INDEXING_YIELD");
     this.name = "ProcessingYield";
   }
-}
-
-export function providerCooldownUntil(
-  lastFailure: string | null | undefined,
-  now = Date.now(),
-) {
-  const retry = lastFailure ? new Date(lastFailure).getTime() + 3600000 : 0;
-  return Number.isFinite(retry) && retry > now
-    ? new Date(retry).toISOString()
-    : null;
 }

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     if (!chunks.length)
       throw new HttpError(
         422,
-        "Aucun passage exploitable. Indexez vos documents avant de générer un QCM.",
+        "Aucun passage exploitable. Attendez la préparation automatique de vos documents avant de générer un QCM.",
       );
     const db = admin();
     const key = createHash("sha256")

@@ -276,3 +276,76 @@ describe("automatic indexing lease isolation", () => {
     });
   });
 });
+
+describe("text preparation without embeddings", () => {
+  it("saves searchable text with null vectors and no AI usage entry", async () => {
+    const before = await pg.query<{ n: number }>(
+      "select count(*)::integer as n from ai_usage_logs",
+    );
+    const job = await pg.query<{ id: string }>(
+      `insert into document_processing_jobs(user_id,document_id,version,status,locked_at) values($1,$2,'v1','processing',now()) returning id`,
+      [alice, docId],
+    );
+    const chunks = JSON.stringify([
+      {
+        ordinal: 0,
+        content:
+          "Docker isole les processus et utilise le noyau du système hôte.",
+        section: "Conteneurs",
+        page: 3,
+        content_hash: "text-only-fixture",
+        embedding: null,
+      },
+    ]);
+    const result = await pg.query<{ done: boolean }>(
+      "select finish_document($1,$2,$3,$4,$5) as done",
+      [job.rows[0].id, alice, docId, "v1", chunks],
+    );
+    expect(result.rows[0].done).toBe(true);
+    const saved = await pg.query<{ content: string; embedding: null }>(
+      `select content,embedding from document_chunks where document_id=$1`,
+      [docId],
+    );
+    expect(saved.rows[0].content).toContain("Docker");
+    expect(saved.rows[0].embedding).toBeNull();
+    expect(
+      (
+        await pg.query<{ status: string }>(
+          "select status from documents where id=$1",
+          [docId],
+        )
+      ).rows[0].status,
+    ).toBe("ready");
+    const after = await pg.query<{ n: number }>(
+      "select count(*)::integer as n from ai_usage_logs",
+    );
+    expect(after.rows[0].n).toBe(before.rows[0].n);
+  });
+  it("enforces the configured generation budget while retaining historical embedding logs", async () => {
+    await pg.query(
+      `insert into ai_usage_logs(user_id,operation,model) select $1,'embed','legacy' from generate_series(1,3)`,
+      [bob],
+    );
+    await pg.query(`select reserve_ai_call($1,5,'generate','test')`, [bob]);
+    await pg.query(`select reserve_ai_call($1,5,'generate','test')`, [bob]);
+    await expect(
+      pg.query(`select reserve_ai_call($1,5,'generate','test')`, [bob]),
+    ).rejects.toThrow("DAILY_AI_LIMIT");
+    expect(
+      (
+        await pg.query<{ n: number }>(
+          `select count(*)::integer as n from ai_usage_logs where user_id=$1 and operation='embed'`,
+          [bob],
+        )
+      ).rows[0].n,
+    ).toBe(3);
+    expect(
+      (
+        await pg.query<{ n: number }>(
+          `select count(*)::integer as n from ai_usage_logs where user_id=$1 and operation='generate'`,
+          [bob],
+        )
+      ).rows[0].n,
+    ).toBe(2);
+  });
+});

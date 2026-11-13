@@ -13,15 +13,17 @@ Les lots continuent côté serveur même si vous fermez la page. Le site relance
 
 **Révision AI a été retirée à la demande de l’utilisateur.** Son ancien lien redirige vers QCM. Les QCM, examens, flashcards et exercices restent disponibles.
 
-## Quotas et indexation
+## Quotas et préparation sans AI
 
-`AI_DAILY_REQUEST_LIMIT` plafonne les appels AI logiques par utilisateur et par jour UTC (50 par défaut). L’indexation conserve une petite réserve pour la génération des QCM : 5 appels au maximum, adaptée aux petits plafonds. Elle ne relève jamais ce plafond et n’active pas de facturation.
+La préparation télécharge les documents depuis Drive, extrait le texte et les pages/diapositives, puis enregistre des passages dans Supabase. Elle ne contacte ni Gemini ni un service d’embeddings : **zéro appel AI par document préparé**. Elle continue même si la génération a épuisé son quota. Les limites des offres Vercel et Supabase restent applicables ; cela ne garantit pas un hébergement gratuit illimité.
 
-Quand le budget d’indexation est atteint, les documents restent en attente, sans être marqués en échec. Les embeddings déjà calculés sont conservés. La reprise quotidienne ou la prochaine visite relance la file lorsque le quota est disponible. Les quotas du fournisseur s’appliquent en plus.
+La recherche de chapitre utilise les mots-clés normalisés du texte. Aucun vecteur ni modèle AI n’est nécessaire. Les passages introuvables ne sont pas inventés. Les questions conservent leurs citations et leur contrôle de support. Les anciens documents, résultats et vecteurs sont conservés sans réindexation forcée.
 
-Les appels sont protégés par un bail par utilisateur en base et des prises de tâches conditionnelles pour empêcher un double traitement. Un lot est borné à environ 230 secondes et 20 documents ; un appel serveur authentifié en programme la suite uniquement si des tâches sont exécutables. Les checkpoints conservent les embeddings entre lots. Une interruption d’hébergement est récupérée après expiration du bail ; une tâche interrompue peut être reprise après dix minutes.
+AI_DAILY_REQUEST_LIMIT plafonne désormais les **appels de génération** par utilisateur et jour UTC (50 par défaut, maximum 5000). Un QCM peut nécessiter plusieurs appels, dont la vérification des questions. Les anciennes consommations d’embeddings restent dans l’historique mais ne réduisent plus ce budget : la fonction SQL atomique existante est utilisée avec le décalage correspondant. La préparation, la recherche et la répétition des QCM enregistrés ne font aucun appel AI.
 
-Les échecs temporaires sont retentés de façon limitée. Un PDF scanné nécessitant un OCR, un format non pris en charge ou un PDF protégé demande une correction du document. La synchronisation globale permet de relancer les échecs temporaires après correction de la configuration.
+Gemini est utilisé pour les générations demandées : QCM, examens, flashcards et identification d’exercices. Ses quotas et tarifs restent ceux du projet Google de l’utilisateur ; aucune facturation n’est activée par cette application.
+
+Les traitements automatiques conservent un bail par utilisateur, des prises de tâches conditionnelles et des lots bornés. Ils continuent côté serveur sans terminal. Les interruptions de délai sont retentées de façon limitée. Les PDF scannés, protégés ou trop lourds affichent une erreur utile. Aucun nouveau SQL n’est nécessaire si les tables initiales existent.
 
 ## Installation locale
 
@@ -60,9 +62,9 @@ L’autorisation est `https://www.googleapis.com/auth/drive.readonly`, nécessai
 
 ## Gemini et Vercel
 
-Variables serveur : `GEMINI_API_KEY`, `GEMINI_MODEL` (défaut `gemini-2.5-flash`), `GEMINI_EMBEDDING_MODEL` (défaut `gemini-embedding-001`), `AI_DAILY_REQUEST_LIMIT`.
+Variables serveur : `GEMINI_API_KEY`, `GEMINI_MODEL` (défaut `gemini-2.5-flash`), `AI_DAILY_REQUEST_LIMIT`.
 
-Les embeddings ont 768 dimensions. Un changement de modèle d’embedding demande de reconstruire l’index sans mélanger les espaces vectoriels.
+Les anciennes variables et tables liées aux embeddings peuvent rester présentes ; elles ne servent plus à la préparation ni à la recherche.
 
 Pour Vercel, définir `NEXT_PUBLIC_APP_URL` avec l’origine HTTPS exacte, ainsi que `CRON_SECRET` et `TOKEN_ENCRYPTION_KEY`. Ces deux derniers doivent être des secrets aléatoires distincts ; conserver la clé de chiffrement après connexion Google.
 
@@ -91,7 +93,7 @@ npm run build
 node scripts/check-pdf-bundle.mjs
 ```
 
-Les tests couvrent extraction PDF/PPTX, validation des questions, citations, déduplication, scores, SM-2, synchronisation Drive, PostgreSQL/pgvector, isolation RLS, scoring durable, quotas, baux d’indexation, pauses et continuations. Les tests navigateur utilisent l’état sans configuration externe et vérifient la navigation, la suppression de Révision AI et l’absence de boutons d’indexation par fichier. Ils ne remplacent pas un test avec les comptes Google/Supabase réels.
+Les tests couvrent extraction PDF/PPTX, validation des questions, citations, déduplication, scores, SM-2, synchronisation Drive, PostgreSQL/pgvector, isolation RLS, scoring durable, quota de génération, préparation sans AI, recherche par mots-clés, baux et continuations. Les tests navigateur utilisent l’état sans configuration externe et vérifient la navigation, la suppression de Révision AI et l’absence de boutons d’indexation par fichier. Ils ne remplacent pas un test avec les comptes Google/Supabase réels.
 
 ## Fonctions et limites actuelles
 

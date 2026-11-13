@@ -34,7 +34,7 @@ export default async function Settings({
     [
       "Gemini",
       !!process.env.GEMINI_API_KEY,
-      "QCM, examens blancs et préparation des documents.",
+      "Génération des QCM, examens blancs et flashcards.",
     ],
   ] as const;
   return (
@@ -160,7 +160,7 @@ export default async function Settings({
               </span>
             </h2>
             <p className="muted text-xs mt-2">
-              Requêtes réservées aujourd’hui (UTC)
+              Appels de génération aujourd’hui (UTC)
             </p>
             <div className="h-1.5 bg-[var(--muted)] rounded-full mt-5 overflow-hidden">
               <div
