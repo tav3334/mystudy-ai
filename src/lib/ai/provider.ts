@@ -110,7 +110,8 @@ export async function diagnoseGeneration(userId: string) {
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}`,
     { headers, signal: AbortSignal.timeout(20000) },
   );
-  if (!metadata.ok) {
+  let available: string[] = [];
+  {
     const error = providerFailure(
       metadata.status,
       await metadata.json().catch(() => null),
@@ -120,7 +121,7 @@ export async function diagnoseGeneration(userId: string) {
       { headers, signal: AbortSignal.timeout(20000) },
     );
     const data = catalog.ok ? await catalog.json() : {};
-    const available = (data.models ?? [])
+    available = (data.models ?? [])
       .filter(
         (m: { name?: string; supportedGenerationMethods?: string[] }) =>
           m.supportedGenerationMethods?.includes("generateContent") &&
@@ -128,13 +129,15 @@ export async function diagnoseGeneration(userId: string) {
       )
       .map((m: { name: string }) => m.name.replace("models/", ""))
       .slice(0, 20);
-    return {
-      ok: false,
-      model,
-      code: error.code,
-      upstreamStatus: metadata.status,
-      available,
-    };
+    if (!metadata.ok)
+      return {
+        ok: false,
+        model,
+        code: error.code,
+        upstreamStatus: metadata.status,
+        available,
+      };
+    console.info("ai_available_models", { available });
   }
   try {
     const result = JSON.parse(
@@ -156,6 +159,7 @@ export async function diagnoseGeneration(userId: string) {
         model,
         code: error.code,
         upstreamStatus: error.upstreamStatus,
+        available,
       };
     if (error instanceof Error && error.message.includes("DAILY_AI_LIMIT"))
       return { ok: false, model, code: "APP_DAILY_LIMIT" };
