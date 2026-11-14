@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { QuizSource } from "./source";
+import { resumeQuestionIndex } from "@/lib/learning/resume";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -66,6 +67,7 @@ export function QuizPlayer({
   const [seconds, setSeconds] = useState<number | null>(null);
   const [saved, setSaved] = useState("");
   const submitting = useRef(false);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
   const latest = useRef(answers);
   useEffect(() => {
     latest.current = answers;
@@ -112,29 +114,62 @@ export function QuizPlayer({
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [game, result, submit]);
+  const attemptId = game?.attempt.id;
+  const saveAnswers = useCallback(
+    (snapshot: Record<string, number[]>) => {
+      if (!attemptId) return Promise.resolve();
+      // Serialize writes so a slower old autosave cannot overwrite newer answers.
+      const task = saveQueue.current
+        .catch(() => {})
+        .then(async () => {
+          const response = await fetch("/api/quizzes/answer", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ attemptId, answers: snapshot }),
+            keepalive: true,
+          });
+          if (!response.ok)
+            throw new Error(
+              "Sauvegarde indisponible. Gardez cette page ouverte et réessayez.",
+            );
+        });
+      saveQueue.current = task;
+      return task;
+    },
+    [attemptId],
+  );
   useEffect(() => {
     if (!game || result) return;
-    const abort = new AbortController();
-    const id = setTimeout(async () => {
+    let active = true;
+    const timer = setTimeout(async () => {
       setSaved("Enregistrement…");
       try {
-        const r = await fetch("/api/quizzes/answer", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ attemptId: game.attempt.id, answers }),
-          signal: abort.signal,
-        });
-        setSaved(r.ok ? "Réponses sauvegardées" : "Sauvegarde indisponible");
+        await saveAnswers(answers);
+        if (active) setSaved("Réponses sauvegardées");
       } catch {
-        if (!abort.signal.aborted)
-          setSaved("Hors connexion : gardez cette page ouverte");
+        if (active)
+          setSaved("Sauvegarde indisponible : gardez cette page ouverte");
       }
     }, 350);
     return () => {
-      clearTimeout(id);
-      abort.abort();
+      active = false;
+      clearTimeout(timer);
     };
-  }, [answers, game, result]);
+  }, [answers, game, result, saveAnswers]);
+  async function saveAndLeave() {
+    if (!game || busy) return;
+    setBusy(true);
+    try {
+      await saveAnswers(latest.current);
+      router.push(game.quiz.kind === "exam" ? "/examens" : "/qcm");
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Sauvegarde impossible.",
+      );
+      setBusy(false);
+    }
+  }
   async function start() {
     setBusy(true);
     setError("");
@@ -147,6 +182,7 @@ export function QuizPlayer({
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setAnswers(d.attempt.answers);
+      setIndex(resumeQuestionIndex(d.questions, d.attempt.answers));
       setGame(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Session indisponible");
@@ -283,10 +319,15 @@ export function QuizPlayer({
   return (
     <div className="max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-5">
-        <Link href="/qcm" className="muted flex gap-2 text-xs">
+        <button
+          type="button"
+          onClick={saveAndLeave}
+          disabled={busy}
+          className="muted flex items-center gap-2 text-xs disabled:opacity-50"
+        >
           <ArrowLeft size={14} />
-          Mes QCM
-        </Link>
+          {busy ? "Enregistrement…" : "Enregistrer et quitter"}
+        </button>
         {seconds !== null && (
           <span
             className={`font-mono text-sm flex gap-2 ${seconds < 60 ? "text-red-600" : "muted"}`}
@@ -330,6 +371,7 @@ export function QuizPlayer({
                 className="!w-4 mt-1 accent-emerald-700"
                 name={q.id}
                 type={q.multiple ? "checkbox" : "radio"}
+                disabled={busy}
                 checked={selected.includes(i)}
                 onChange={() =>
                   setAnswers((prev) => ({
