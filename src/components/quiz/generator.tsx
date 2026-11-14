@@ -57,6 +57,25 @@ export function QuizGenerator({
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
+      if (typeof d.count === "number" && d.count < values.count) {
+        const detail =
+          d.reason === "quota"
+            ? "Le quota AI disponible a interrompu les lots suivants."
+            : d.reason === "time"
+              ? "Le temps de préparation disponible est écoulé."
+              : d.reason === "service"
+                ? "Le service AI a interrompu les lots suivants."
+                : "Les autres propositions étaient répétées ou insuffisamment justifiées par le cours.";
+        toast.warning(
+          d.count +
+            " questions préparées sur " +
+            values.count +
+            " demandées. " +
+            detail,
+          { duration: 12000 },
+        );
+      } else if (typeof d.count === "number")
+        toast.success(d.count + " questions prêtes.");
       router.push(`/qcm/${d.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Génération impossible");
@@ -207,11 +226,12 @@ export function QuizGenerator({
             <Sparkles size={16} />
           )}{" "}
           {busy
-            ? "Génération en cours…"
+            ? "Préparation des questions par lots…"
             : `Générer mon ${exam ? "examen" : "QCM"}`}
         </Button>
         <p className="text-[10px] muted text-center">
-          Une génération utilise votre quota AI quotidien.
+          La préparation se fait par lots vérifiés et peut utiliser plusieurs
+          appels de votre quota AI quotidien.
         </p>
       </section>
     </form>

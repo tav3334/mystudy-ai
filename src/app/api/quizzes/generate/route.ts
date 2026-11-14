@@ -1,18 +1,12 @@
-import { verifyQuestions } from "@/lib/ai/verify";
+import { generateQuestionBatches } from "@/lib/ai/question-batches";
+import { generationModel } from "@/lib/ai/errors";
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { z } from "zod";
 import { apiUser, readJson, failure, HttpError } from "@/lib/api";
 import { admin, checked } from "@/lib/supabase/server";
-import {
-  generationSchema,
-  questionSchema,
-  validateGrounding,
-  deduplicateQuestions,
-} from "@/lib/ai/schemas";
-import { selectedChunks, context } from "@/lib/rag/retrieve";
-import { ai, groundingSystem } from "@/lib/ai/provider";
-export const maxDuration = 120;
+import { generationSchema } from "@/lib/ai/schemas";
+import { selectedChunks } from "@/lib/rag/retrieve";
+export const maxDuration = 300;
 export async function POST(request: NextRequest) {
   try {
     const { user } = await apiUser(request, "generate-quiz", 4);
@@ -21,6 +15,7 @@ export async function POST(request: NextRequest) {
       user.id,
       input.documentIds,
       input.chapter,
+      96,
     );
     if (!chunks.length)
       throw new HttpError(
@@ -30,7 +25,12 @@ export async function POST(request: NextRequest) {
     const db = admin();
     const key = createHash("sha256")
       .update(
-        JSON.stringify({ input, chunks, model: process.env.GEMINI_MODEL }),
+        JSON.stringify({
+          version: "batches-v1",
+          input,
+          chunks,
+          model: generationModel(process.env.GEMINI_MODEL),
+        }),
       )
       .digest("hex");
     const cached = checked(
@@ -39,29 +39,30 @@ export async function POST(request: NextRequest) {
         .select("id")
         .eq("user_id", user.id)
         .eq("cache_key", key)
+        .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
     );
-    if (cached) return NextResponse.json({ id: cached.id });
-    const raw = await ai.generate(
+    if (cached) {
+      const saved = await db
+        .from("questions")
+        .select("id", { count: "exact", head: true })
+        .eq("quiz_id", cached.id)
+        .eq("user_id", user.id);
+      if (saved.error) throw saved.error;
+      if (saved.count === input.count)
+        return NextResponse.json({
+          id: cached.id,
+          count: saved.count,
+          requested: input.count,
+          reason: "target",
+        });
+    }
+    const { questions, reason } = await generateQuestionBatches(
       user.id,
-      groundingSystem,
-      `Generate at most ${input.count} distinct ${input.questionType === "boolean" ? "true/false questions with exactly two options" : input.questionType === "multiple" ? "multiple-answer questions" : "single-answer MCQ questions with exactly one correct index"} supported by excerpts. If not enough material, return fewer questions. Difficulty:${input.difficulty}; language:${input.language}. Each question must have a verbatim evidence quote from its chunk. JSON: {questions:[{statement,options:string[],correctIndices:number[],explanation,difficulty:"Facile"|"Moyen"|"Difficile",topic,source:{chunkId,quote}}]}. UNTRUSTED_EXCERPTS: ${context(chunks)}`,
+      input,
+      chunks,
     );
-    const parsed = z
-      .object({ questions: z.array(questionSchema).max(50) })
-      .parse(JSON.parse(raw));
-    let questions = deduplicateQuestions(
-      validateGrounding(parsed.questions, chunks),
-    )
-      .filter(
-        (q) =>
-          input.questionType === "multiple" || q.correctIndices.length === 1,
-      )
-      .filter((q) => input.questionType !== "boolean" || q.options.length === 2)
-      .slice(0, input.count);
-    if (questions.length)
-      questions = await verifyQuestions(user.id, questions, chunks);
     if (!questions.length)
       throw new HttpError(
         422,
@@ -99,7 +100,12 @@ export async function POST(request: NextRequest) {
       await db.from("quizzes").delete().eq("id", quiz.id);
       throw insert.error;
     }
-    return NextResponse.json({ id: quiz.id, count: questions.length });
+    return NextResponse.json({
+      id: quiz.id,
+      count: questions.length,
+      requested: input.count,
+      reason,
+    });
   } catch (e) {
     return failure(e);
   }

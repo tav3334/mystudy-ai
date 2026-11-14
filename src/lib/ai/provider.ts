@@ -6,8 +6,14 @@ import {
 import "server-only";
 import { required } from "@/lib/env";
 import { admin, checked } from "@/lib/supabase/server";
+export type GenerationOptions = { timeoutMs?: number };
 export interface AIProvider {
-  generate(userId: string, system: string, prompt: string): Promise<string>;
+  generate(
+    userId: string,
+    system: string,
+    prompt: string,
+    options?: GenerationOptions,
+  ): Promise<string>;
 }
 async function reserve(
   userId: string,
@@ -39,7 +45,9 @@ async function request(
   timeoutMs = 90000,
 ) {
   if (!process.env.GEMINI_API_KEY) throw new AIProviderError("AI_KEY_MISSING");
+  const deadline = Date.now() + timeoutMs;
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (Date.now() >= deadline) throw new AIProviderError("AI_UNAVAILABLE");
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:${method}`,
       {
@@ -49,7 +57,7 @@ async function request(
           "x-goog-api-key": required("GEMINI_API_KEY"),
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
       },
     );
     if (r.ok) return r.json();
@@ -60,19 +68,29 @@ async function request(
   throw new AIProviderError("AI_UNAVAILABLE");
 }
 class GeminiProvider implements AIProvider {
-  async generate(userId: string, system: string, prompt: string) {
+  async generate(
+    userId: string,
+    system: string,
+    prompt: string,
+    options?: GenerationOptions,
+  ) {
     const model = generationModel(process.env.GEMINI_MODEL);
     if (!model) throw new AIProviderError("AI_MODEL_UNAVAILABLE");
     const log = await reserve(userId, "generate", model);
-    const d = await request(model, "generateContent", {
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.2,
-        maxOutputTokens: 16000,
+    const d = await request(
+      model,
+      "generateContent",
+      {
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+          maxOutputTokens: 16000,
+        },
       },
-    });
+      options?.timeoutMs,
+    );
     checked(
       await admin()
         .from("ai_usage_logs")
