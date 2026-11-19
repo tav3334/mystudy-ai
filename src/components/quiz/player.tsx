@@ -55,6 +55,16 @@ export function QuizPlayer({
   initialReview?: { game: Playing; result: Result };
 }) {
   const router = useRouter();
+  const [training, setTraining] = useState(false);
+  const [feedback, setFeedback] = useState<
+    Record<
+      string,
+      Pick<
+        Result["review"][number],
+        "correct" | "correctIndices" | "explanation" | "source"
+      >
+    >
+  >({});
   const [retrying, setRetrying] = useState(false);
   const [game, setGame] = useState<Playing | null>(initialReview?.game ?? null);
   const [index, setIndex] = useState(0);
@@ -183,9 +193,43 @@ export function QuizPlayer({
       if (!r.ok) throw new Error(d.error);
       setAnswers(d.attempt.answers);
       setIndex(resumeQuestionIndex(d.questions, d.attempt.answers));
+      try {
+        setTraining(
+          d.quiz.kind === "quiz" &&
+            localStorage.getItem("mystudy-training:" + d.attempt.id) === "true",
+        );
+      } catch {
+        setTraining(false);
+      }
       setGame(d);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Session indisponible");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function checkTrainingAnswer() {
+    if (!game || game.quiz.kind !== "quiz" || busy) return;
+    const question = game.questions[index];
+    if (!question || !latest.current[question.id]?.length) return;
+    setBusy(true);
+    try {
+      await saveAnswers(latest.current);
+      const response = await fetch("/api/quizzes/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          attemptId: game.attempt.id,
+          questionId: question.id,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setFeedback((previous) => ({ ...previous, [question.id]: data }));
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Correction indisponible.",
+      );
     } finally {
       setBusy(false);
     }
@@ -353,6 +397,26 @@ export function QuizPlayer({
             style={{ width: `${((index + 1) / game.questions.length) * 100}%` }}
           />
         </div>
+        {game.quiz.kind === "quiz" && (
+          <label className="mt-6 flex items-start gap-3 rounded-xl border border-[var(--border)] p-4 text-xs leading-6">
+            <input
+              type="checkbox"
+              className="!w-4 mt-1 accent-emerald-700"
+              checked={training}
+              disabled={busy}
+              onChange={(event) => {
+                setTraining(event.target.checked);
+                try {
+                  localStorage.setItem(
+                    "mystudy-training:" + game.attempt.id,
+                    String(event.target.checked),
+                  );
+                } catch {}
+              }}
+            />
+            <span>Mode entraînement : correction après chaque réponse</span>
+          </label>
+        )}
         <p className="label text-emerald-700 text-[10px] mt-8">{q.topic}</p>
         <h1 className="text-xl font-semibold leading-8 mt-3">{q.statement}</h1>
         <p className="text-xs muted mt-3">
@@ -371,7 +435,7 @@ export function QuizPlayer({
                 className="!w-4 mt-1 accent-emerald-700"
                 name={q.id}
                 type={q.multiple ? "checkbox" : "radio"}
-                disabled={busy}
+                disabled={busy || Boolean(feedback[q.id])}
                 checked={selected.includes(i)}
                 onChange={() =>
                   setAnswers((prev) => ({
@@ -388,6 +452,38 @@ export function QuizPlayer({
             </label>
           ))}
         </fieldset>
+        {training && game.quiz.kind === "quiz" && (
+          <div className="mt-5 space-y-4">
+            {!feedback[q.id] ? (
+              <Button
+                variant="outline"
+                onClick={checkTrainingAnswer}
+                disabled={busy || !selected.length}
+              >
+                {busy ? "Vérification…" : "Vérifier ma réponse"}
+              </Button>
+            ) : (
+              <aside
+                role="status"
+                className="rounded-xl border border-[var(--border)] p-4 space-y-3"
+              >
+                <p className="font-semibold">
+                  {feedback[q.id].correct ? "Bonne réponse !" : "À revoir"}
+                </p>
+                <p className="text-sm">
+                  Bonne réponse :{" "}
+                  {feedback[q.id].correctIndices
+                    .map((i) => q.options[i])
+                    .join(" ; ")}
+                </p>
+                <p className="text-sm muted leading-7">
+                  {feedback[q.id].explanation}
+                </p>
+                <QuizSource source={feedback[q.id].source} />
+              </aside>
+            )}
+          </div>
+        )}
         <div className="flex justify-between mt-8 gap-3">
           <Button
             variant="outline"

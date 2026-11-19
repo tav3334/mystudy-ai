@@ -1,5 +1,8 @@
 import { beforeEach, describe, it, expect, vi } from "vitest";
 vi.mock("server-only", () => ({}));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ refresh: () => {} }),
+}));
 const mocks = vi.hoisted(() => ({ from: vi.fn(), configured: vi.fn() }));
 vi.mock("../src/lib/env", () => ({ hasSupabase: mocks.configured }));
 vi.mock("../src/lib/supabase/server", () => ({
@@ -60,7 +63,9 @@ describe("saved questionnaire library", () => {
         },
       },
     ]);
-    mocks.from.mockImplementation((t) => (t === "quizzes" ? saved : active));
+    mocks.from.mockImplementation((t) =>
+      t === "modules" ? query([]) : t === "quizzes" ? saved : active,
+    );
     const html = renderToStaticMarkup(await QuizLibrary({}));
     expect(html.indexOf("À reprendre")).toBeLessThan(
       html.indexOf("Mes QCM enregistrés"),
@@ -85,7 +90,9 @@ describe("saved questionnaire library", () => {
         quizzes: [{ title: "Examen Docker", duration_minutes: 30 }],
       },
     ]);
-    mocks.from.mockImplementation((t) => (t === "quizzes" ? saved : active));
+    mocks.from.mockImplementation((t) =>
+      t === "modules" ? query([]) : t === "quizzes" ? saved : active,
+    );
     const html = renderToStaticMarkup(await QuizLibrary({ exam: true }));
     expect(html).toContain("Le chronomètre continue pendant votre absence");
     expect(html).toContain('href="/qcm/exam"');
